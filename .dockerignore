@@ -1,0 +1,13 @@
+uploads/*
+!uploads/.gitkeep
+static/frames/*
+!static/frames/.gitkeep
+static/output/*
+!static/output/.gitkeep
+__pycache__/
+*.pyc
+server.log
+upload_resp.json
+gen_resp.json
+gen_payload.json
+venv/

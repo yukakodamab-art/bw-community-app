@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BW コミュニティ画像ジェネレーター</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>BW コミュニティ画像ジェネレーター（プロトタイプ）</h1>
+  <p class="sub">動画をアップロード → フレームをクリックで選択 → スライドに割り当てて生成</p>
+</header>
+
+<main>
+  <section id="upload-section" class="panel">
+    <h2>1. 動画をアップロード</h2>
+    <form id="upload-form">
+      <input type="file" id="video-input" accept="video/*" required>
+      <label>抽出フレームレート
+        <select id="fps-select">
+          <option value="1">1 fps（速い・粗い）</option>
+          <option value="2" selected>2 fps（標準）</option>
+          <option value="4">4 fps（細かい）</option>
+        </select>
+      </label>
+      <button type="submit">アップロードしてフレーム抽出</button>
+    </form>
+    <p id="upload-status"></p>
+  </section>
+
+  <section id="gallery-section" class="panel hidden">
+    <h2>2. フレームを選択</h2>
+    <p class="hint">サムネイルをクリックすると選択されます（枠が青くなります）。下のスライドの「①にセット」「②にセット」で割り当ててください。</p>
+    <div id="gallery" class="gallery"></div>
+  </section>
+
+  <section id="builder-section" class="panel hidden">
+    <h2>3. スライドを組み立てる</h2>
+    <div id="slides"></div>
+    <button id="add-slide-btn" type="button">＋ スライド追加</button>
+    <hr>
+    <button id="generate-btn" type="button">この内容で生成する</button>
+    <p id="generate-status"></p>
+  </section>
+
+  <section id="result-section" class="panel hidden">
+    <h2>4. 生成結果</h2>
+    <div id="results" class="gallery"></div>
+  </section>
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
