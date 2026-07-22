@@ -5,9 +5,12 @@ Shared by the Flask app: builds one 1080x1080 slide from 2 source frames,
 following the format worked out with Yuka:
 - square 1080x1080
 - slide 1 only: black title band (kicker + headline, ** marks red emphasis)
-- 2 source frames stacked, cropped edge-to-edge (bottom/captions always kept,
-  top corner tag always trimmed), no letterboxing
+- 2 source frames stacked, cropped edge-to-edge, no letterboxing
+- crop is TOP-ONLY (never left/right) so on-screen captions never get cut off
+  at the sides; a bit of head/hair may be trimmed from the top, which is fine
+  as long as the eyes stay in frame
 - thin black divider between the two frames + thin black outer border
+- title text auto-shrinks to fit the banner width so it's never cut off
 """
 import re
 from PIL import Image, ImageDraw, ImageFont
@@ -17,27 +20,34 @@ FONT_BOLD = "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"
 S = 1080
 DIVIDER_H = 6
 BORDER_W = 8
+TITLE_MARGIN = 48  # left/right breathing room for title text
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
 RED = (230, 20, 30)
 
 
-def fit_crop_fill(path, target_w, target_h, min_top_crop=200):
+def fit_crop_fill(path, target_w, target_h):
+    """
+    Fill target_w x target_h with the source image, cropping ONLY from the
+    top (never left/right) so nothing gets clipped sideways (captions stay
+    fully readable). The bottom of the frame (where captions live) is always
+    kept in full; some hair/forehead may be trimmed off the top.
+    """
     im = Image.open(path).convert("RGB")
     ow, oh = im.size
     r = target_w / target_h
 
-    max_crop_h_by_ratio = ow / r
-    crop_h = min(oh - min_top_crop, max_crop_h_by_ratio)
-    crop_w = crop_h * r
-    if crop_w > ow:
-        crop_w = ow
-        crop_h = crop_w / r
+    # Crop height needed to hit the target ratio while using the FULL width
+    # (no side-crop, ever).
+    crop_h = ow / r
+    if crop_h > oh:
+        # Source is taller (relatively) than target needs -> no crop possible
+        # without shrinking width too; just use the whole frame (rare case).
+        crop_h = oh
 
     crop_top = oh - crop_h
-    crop_left = (ow - crop_w) / 2
-    box = (crop_left, crop_top, crop_left + crop_w, crop_top + crop_h)
-    cropped = im.crop(tuple(int(round(v)) for v in box))
+    box = (0, int(round(crop_top)), ow, oh)
+    cropped = im.crop(box)
     return cropped.resize((target_w, target_h), Image.LANCZOS)
 
 
@@ -52,14 +62,37 @@ def _parse_segments(text):
     return segs
 
 
-def _draw_mixed_center(draw, text, cy, font, base_color, emph_color, stroke_width=3):
+def _measure_width(draw, segs, font, stroke_width):
+    total = 0
+    for seg, _ in segs:
+        bbox = draw.textbbox((0, 0), seg, font=font, stroke_width=stroke_width)
+        total += bbox[2] - bbox[0]
+    return total
+
+
+def _draw_mixed_center(draw, text, cy, font_path, base_size, base_color, emph_color,
+                        stroke_width=3, max_width=None):
+    """Draw centered text, shrinking the font until it fits max_width (so
+    long titles never get cut off at the canvas edge)."""
     segs = _parse_segments(text)
     if not segs:
         return
-    widths = []
-    for seg, emph in segs:
-        bbox = draw.textbbox((0, 0), seg, font=font, stroke_width=stroke_width)
-        widths.append(bbox[2] - bbox[0])
+
+    size = base_size
+    font = ImageFont.truetype(font_path, size)
+    if max_width:
+        while size > 16:
+            w = _measure_width(draw, segs, font, stroke_width)
+            if w <= max_width:
+                break
+            size -= 2
+            font = ImageFont.truetype(font_path, size)
+
+    widths = [
+        draw.textbbox((0, 0), seg, font=font, stroke_width=stroke_width)[2]
+        - draw.textbbox((0, 0), seg, font=font, stroke_width=stroke_width)[0]
+        for seg, _ in segs
+    ]
     total_w = sum(widths)
     bbox_full = draw.textbbox((0, 0), "".join(s for s, _ in segs), font=font, stroke_width=stroke_width)
     th = bbox_full[3] - bbox_full[1]
@@ -77,14 +110,16 @@ def build_slide(frame1_path, frame2_path, title_h=0, kicker="", headline=""):
     canvas = Image.new("RGB", (S, S), BLACK)
     draw = ImageDraw.Draw(canvas)
 
+    max_text_w = S - 2 * TITLE_MARGIN
+
     if title_h > 0:
         draw.rectangle([0, 0, S, title_h], fill=BLACK)
-        f_kicker = ImageFont.truetype(FONT_BOLD, 40)
-        f_headline = ImageFont.truetype(FONT_BOLD, 54)
         if kicker:
-            _draw_mixed_center(draw, kicker, title_h * 0.35, f_kicker, WHITE, RED, stroke_width=0)
+            _draw_mixed_center(draw, kicker, title_h * 0.35, FONT_BOLD, 40, WHITE, RED,
+                                stroke_width=0, max_width=max_text_w)
         if headline:
-            _draw_mixed_center(draw, headline, title_h * 0.72, f_headline, WHITE, RED, stroke_width=4)
+            _draw_mixed_center(draw, headline, title_h * 0.72, FONT_BOLD, 54, WHITE, RED,
+                                stroke_width=4, max_width=max_text_w)
 
     img1 = fit_crop_fill(frame1_path, S, img_h)
     img2 = fit_crop_fill(frame2_path, S, img_h)
