@@ -1,9 +1,12 @@
 FROM python:3.11-slim
 
-# ffmpeg for frame extraction, fonts-noto-cjk for the Japanese bold text overlay
+# ffmpeg for frame extraction, fonts-noto-cjk for the Japanese bold text overlay,
+# libgl1/libglib2.0-0 are runtime deps of opencv-python-headless (face detection)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     fonts-noto-cjk \
+    libgl1 \
+    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

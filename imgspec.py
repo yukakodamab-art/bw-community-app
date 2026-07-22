@@ -13,6 +13,8 @@ following the format worked out with Yuka:
 - title text auto-shrinks to fit the banner width so it's never cut off
 """
 import re
+import numpy as np
+import cv2
 from PIL import Image, ImageDraw, ImageFont
 
 FONT_BOLD = "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"
@@ -21,9 +23,37 @@ S = 1080
 DIVIDER_H = 6
 BORDER_W = 8
 TITLE_MARGIN = 48  # left/right breathing room for title text
+EYE_MARGIN_FRAC = 0.05  # keep at least ~5% of frame height of clear space above the eyes
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
 RED = (230, 20, 30)
+
+_face_cascade = None
+
+
+def _get_face_cascade():
+    global _face_cascade
+    if _face_cascade is None:
+        path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+        _face_cascade = cv2.CascadeClassifier(path)
+    return _face_cascade
+
+
+def _detect_eye_line_y(im):
+    """Best-effort: returns the y-coordinate (original image pixels) just
+    above the eyes of the most prominent detected face, or None if no face
+    is found. Eyes sit roughly 38% down a frontal face box."""
+    try:
+        arr = np.array(im.convert("L"))
+        cascade = _get_face_cascade()
+        faces = cascade.detectMultiScale(arr, scaleFactor=1.1, minNeighbors=5, minSize=(80, 80))
+        if len(faces) == 0:
+            return None
+        # pick the largest face (most likely the main subject)
+        fx, fy, fw, fh = max(faces, key=lambda f: f[2] * f[3])
+        return fy + fh * 0.38
+    except Exception:
+        return None
 
 
 def fit_crop_fill(path, target_w, target_h):
@@ -31,7 +61,9 @@ def fit_crop_fill(path, target_w, target_h):
     Fill target_w x target_h with the source image, cropping ONLY from the
     top (never left/right) so nothing gets clipped sideways (captions stay
     fully readable). The bottom of the frame (where captions live) is always
-    kept in full; some hair/forehead may be trimmed off the top.
+    kept in full; some hair/forehead may be trimmed off the top, but we stop
+    well short of the eyes (detected via face detection) so a face is never
+    cropped through the eyes.
     """
     im = Image.open(path).convert("RGB")
     ow, oh = im.size
@@ -41,11 +73,16 @@ def fit_crop_fill(path, target_w, target_h):
     # (no side-crop, ever).
     crop_h = ow / r
     if crop_h > oh:
-        # Source is taller (relatively) than target needs -> no crop possible
-        # without shrinking width too; just use the whole frame (rare case).
         crop_h = oh
-
     crop_top = oh - crop_h
+
+    # Don't crop past a safe line above the eyes.
+    eye_y = _detect_eye_line_y(im)
+    if eye_y is not None:
+        safe_max_crop_top = max(0, eye_y - EYE_MARGIN_FRAC * oh)
+        if crop_top > safe_max_crop_top:
+            crop_top = safe_max_crop_top
+
     box = (0, int(round(crop_top)), ow, oh)
     cropped = im.crop(box)
     return cropped.resize((target_w, target_h), Image.LANCZOS)
